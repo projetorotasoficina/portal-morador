@@ -4,11 +4,13 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import CollectionCalendar from "@/components/CollectionCalendar";
+import RouteMapModal from "@/components/RouteMapModal"; // NOVO
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePrefeitura } from "@/hooks/usePrefeitura";
 import { buscarMeuPerfil, type Usuario, getToken } from "@/services/auth";
-import { consultarAgendaColeta, consultarHistoricoColeta, type AgendaColeta, type HistoricoColeta } from "@/services/coleta";
+import { consultarAgendaColeta, consultarHistoricoColeta, type AgendaColeta, type HistoricoColeta, type HistoricoItem } from "@/services/coleta"; // Importa HistoricoItem
 import { Calendar, Clock, History, Loader2, MapPin, Recycle, User } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +22,10 @@ export default function Home() {
   const [perfil, setPerfil] = useState<Usuario | null>(null);
   const [agenda, setAgenda] = useState<AgendaColeta | null>(null);
   const [historico, setHistorico] = useState<HistoricoColeta | null>(null);
+
+  // Estado para o modal do mapa
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [selectedHistoricoItem, setSelectedHistoricoItem] = useState<HistoricoItem | null>(null);
 
   const [loadingPerfil, setLoadingPerfil] = useState(false);
   const [loadingAgenda, setLoadingAgenda] = useState(false);
@@ -102,6 +108,15 @@ export default function Home() {
     return { mensagem: "O caminhão ainda não passou hoje", cor: "text-gray-600", icone: Clock };
   };
 
+  const handleShowRoute = (item: HistoricoItem) => {
+    if (!item.rota || item.rota.length === 0) {
+      toast.info("Nenhuma rota registrada para esta coleta.");
+      return;
+    }
+    setSelectedHistoricoItem(item);
+    setIsMapModalOpen(true);
+  };
+
   if (authLoading || loadingPerfil) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -174,103 +189,69 @@ export default function Home() {
             </Card>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Agenda de Coleta */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-blue-700" />
-                  Agenda de Coleta
-                </CardTitle>
-                <CardDescription>Dias e horários previstos para coleta na sua rua</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loadingAgenda ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-                  </div>
-                ) : agenda && agenda.diasColeta && agenda.diasColeta.length > 0 ? (
-                  <div className="space-y-3">
-                    {agenda.diasColeta.map((dia, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
-                      >
-                        <Calendar className="h-5 w-5 text-blue-600 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="font-semibold text-slate-900">{dia.dia}</p>
-                          <p className="text-sm text-slate-600">{dia.periodo}</p>
-                          {dia.tipos && dia.tipos.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {dia.tipos.map((tipo: string, idx: number) => (
-                                <span
-                                  key={idx}
-                                  className="text-xs px-2 py-1 bg-blue-600/10 text-blue-700 rounded-full"
-                                >
-                                  {tipo}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">Nenhuma agenda de coleta cadastrada para seu endereço</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Histórico de Coleta */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <History className="h-5 w-5 text-blue-700" />
-                  Histórico de Coleta
-                </CardTitle>
-                <CardDescription>Últimas passagens do caminhão pela sua rua</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loadingHistorico ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-                  </div>
-                ) : historico && historico.historico && historico.historico.length > 0 ? (
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                    {historico.historico.map((item, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
-                      >
-                        <Recycle className="h-5 w-5 text-green-600 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="font-semibold text-slate-900">
-                            {new Date(item.data).toLocaleDateString("pt-BR")}
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            {item.hora} - {item.tipo}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <History className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">Nenhum histórico de coleta registrado ainda</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          {/* Calendário de Coletas */}
+          <div className="mb-6">
+            <CollectionCalendar
+              agenda={agenda}
+              loading={loadingAgenda}
+            />
           </div>
+
+          {/* Histórico de Coleta */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5 text-blue-700" />
+                Histórico de Coleta
+              </CardTitle>
+              <CardDescription>Clique em um item para ver a rota percorrida no mapa</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingHistorico ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                </div>
+              ) : historico && historico.historico && historico.historico.length > 0 ? (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                  {historico.historico.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                      onClick={() => handleShowRoute(item)} // <--- AÇÃO DE CLIQUE
+                    >
+                      <Recycle className="h-5 w-5 text-green-600 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-900">
+                          {new Date(item.data).toLocaleDateString("pt-BR")}
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          {item.hora} - {item.tipo}
+                        </p>
+                      </div>
+                      {item.rota && item.rota.length > 0 && (
+                        <MapPin className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <History className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">Nenhum histórico de coleta registrado ainda</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </main>
-
       <Footer />
+      {/* Modal do Mapa */}
+      <RouteMapModal
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+        historicoItem={selectedHistoricoItem}
+        perfil={perfil}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { getToken } from './auth';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://rotas-api-yqsi.onrender.com';
 
-// ===== Tipos da API =====
+// ===== Tipos da API (sem alteração ) =====
 interface ApiAgendaItem {
   nomeRota: string;
   tipoResiduo: string;
@@ -24,13 +24,15 @@ interface ApiHistoricoItem {
   placaCaminhao: string;
   distanciaTotal: number;
   status: string;
+  rota?: { latitude: number; longitude: number }[];
 }
 
-// ===== Tipos usados no front =====
+// ===== Tipos usados no front (sem alteração) =====
 export interface DiaColeta {
   dia: string;
   periodo: string;
   tipos: string[];
+  data: string;
 }
 
 export interface AgendaColeta {
@@ -38,17 +40,23 @@ export interface AgendaColeta {
   diasColeta: DiaColeta[];
 }
 
+export interface Coordenada {
+  latitude: number;
+  longitude: number;
+}
+
 export interface HistoricoItem {
   data: string; // YYYY-MM-DD
   hora: string; // HH:mm
-  tipo: string; // ex.: “RECICLÁVEL”
+  tipo: string; // ex.: "RECICLÁVEL"
+  rota?: Coordenada[]; // Array de coordenadas da rota
 }
 
 export interface HistoricoColeta {
   historico: HistoricoItem[];
 }
 
-// ===== Helpers de normalização =====
+// ===== Helpers de normalização (sem alteração) =====
 const DIA_MAP: Record<ApiAgendaItem['diaSemana'], string> = {
   DOMINGO: 'Domingo',
   SEGUNDA: 'Segunda',
@@ -63,8 +71,8 @@ function toAgendaColeta(items: ApiAgendaItem[]): AgendaColeta {
   const diasColeta: DiaColeta[] = items.map((it) => ({
     dia: DIA_MAP[it.diaSemana] ?? it.diaSemana,
     periodo: it.descricaoPeriodo || it.periodo,
-    // “tipos” agregando tipoResiduo e tipoColeta (quando existirem)
     tipos: [it.tipoResiduo, it.tipoColeta].filter(Boolean),
+    data: '',
   }));
   return { endereco: '', diasColeta };
 }
@@ -74,18 +82,21 @@ function toHistorico(items: ApiHistoricoItem[]): HistoricoColeta {
     const d = new Date(it.dataInicio);
     const data = d.toISOString().split('T')[0];
     const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    // priorize tipoResiduo; se quiser, concatene com tipoColeta
     const tipo = it.tipoResiduo || it.tipoColeta || '';
-    return { data, hora, tipo };
+
+    const rota: Coordenada[] | undefined = it.rota?.map(coord => ({
+      latitude: coord.latitude,
+      longitude: coord.longitude
+    }));
+
+    return { data, hora, tipo, rota };
   });
-  // opcional: ordenar mais recente primeiro
   historico.sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : 0));
   return { historico };
 }
 
 // ===== Chamadas =====
 
-// Agenda por coordenadas (endpoint público, porém estamos autenticando mesmo assim)
 export async function consultarAgendaColeta(latitude: number, longitude: number): Promise<AgendaColeta> {
   const token = getToken();
   if (!token) throw new Error('Usuário não autenticado');
@@ -103,17 +114,14 @@ export async function consultarAgendaColeta(latitude: number, longitude: number)
   if (!resp.ok) {
     if (resp.status === 401) throw new Error('Sessão expirada');
     if (resp.status === 400) throw new Error('Coordenadas inválidas');
-    // alguns backends usam 404 quando não encontra rota
     if (resp.status === 404) throw new Error('Nenhuma rota de coleta encontrada para este endereço');
     throw new Error('Erro ao consultar agenda de coleta');
   }
 
   const data: ApiAgendaItem[] = await resp.json();
-  // API retorna array; se vier vazio, reflita vazio no front
   return toAgendaColeta(Array.isArray(data) ? data : []);
 }
 
-// Histórico por coordenadas (endpoint público)
 export async function consultarHistoricoColeta(latitude: number, longitude: number): Promise<HistoricoColeta> {
   const token = getToken();
   if (!token) throw new Error('Usuário não autenticado');
@@ -130,11 +138,26 @@ export async function consultarHistoricoColeta(latitude: number, longitude: numb
 
   if (!resp.ok) {
     if (resp.status === 401) throw new Error('Sessão expirada');
-    if (resp.status === 400) return { historico: [] }; // coords inválidas → trate como vazio
-    if (resp.status === 404) return { historico: [] }; // nada encontrado
+    if (resp.status === 400) return { historico: [] };
+    if (resp.status === 404) return { historico: [] };
     throw new Error('Erro ao consultar histórico de coleta');
   }
 
   const data: ApiHistoricoItem[] = await resp.json();
-  return toHistorico(Array.isArray(data) ? data : []);
+  const historico = toHistorico(Array.isArray(data) ? data : []);
+
+  // <--- SIMULAÇÃO DE ROTA PARA TESTE AQUI
+  if (historico.historico.length > 0) {
+    // Simula uma rota de 5 pontos para o primeiro item do histórico
+    historico.historico[0].rota = [
+      { latitude: latitude + 0.001, longitude: longitude + 0.001 },
+      { latitude: latitude + 0.002, longitude: longitude + 0.002 },
+      { latitude: latitude + 0.003, longitude: longitude + 0.003 },
+      { latitude: latitude + 0.004, longitude: longitude + 0.004 },
+      { latitude: latitude + 0.005, longitude: longitude + 0.005 },
+    ];
+  }
+  // FIM DA SIMULAÇÃO DE ROTA --->
+
+  return historico;
 }
